@@ -1,5 +1,4 @@
 name: Update Telegram Posts
-
 on:
   schedule:
     - cron: '0 */2 * * *'  # اجرا هر دو ساعت در دقیقه صفر
@@ -8,10 +7,11 @@ on:
 jobs:
   update-posts:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false # برای امنیت بیشتر
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,29 +28,43 @@ jobs:
         run: |
           ls -la
           echo "Checking if telegram_script.py exists"
-          test -f telegram_script.py && echo "Script found" || echo "Script not found"
+          test -f telegram_script.py && echo "Script found" || { echo "Script not found!"; exit 1; }
 
       - name: Run script
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }} # در صورت استفاده از bot
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           echo "Starting script execution..."
+          # اگر اسکریپت خطا دهد، مرحله متوقف می‌شود
           python telegram_script.py 2>&1 | tee script_output.log
-          echo "Script execution finished."
+          echo "Script execution finished with exit code: $?"
           cat script_output.log
 
-      - name: Check files after running script
+      - name: Check output files
         run: |
-          ls -la telegram-posts.html posts_formatted.json || echo "Output files not found"
+          ls -la telegram-posts.html posts_formatted.json || echo "Warning: Output files not found"
 
       - name: Commit and push changes
+        if: success() # فقط در صورت موفقیت مراحل قبلی اجرا شود
         run: |
-          git config --global user.name 'sinavm'
-          git config --global user.email 'sinabb.2006@gmail.com'
-          git add telegram-posts.html posts_formatted.json || echo "No files to add"
-          git commit -m "Update Telegram posts" || echo "No changes to commit"
-          git remote set-url origin https://x-access-token:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${{ github.repository }}.git
-          git push
+          # تنظیم نام کاربری و ایمیل از متغیرهای محیطی گیت‌هاب (هویتی شما)
+          git config --global user.name '${{ github.actor }}'
+          git config --global user.email '${{ github.actor }}@users.noreply.github.com'
+          
+          # انتخاب شاخه اصلی (مطمئن شوید شاخه صحیح را انتخاب می‌کنید)
+          git checkout main || git checkout master
+          
+          # اضافه کردن فایل‌ها
+          git add telegram-posts.html posts_formatted.json
+          
+          # بررسی اینکه آیا تغییری وجود دارد یا خیر
+          git diff --cached --quiet || git commit -m "Auto-update Telegram posts [skip ci]"
+          
+          # تنظیم URL ریموت با استفاده از توکن گیت‌هاب (امن‌تر و استاندارد)
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          
+          # پش به شاخه اصلی
+          git push origin main || git push origin master
